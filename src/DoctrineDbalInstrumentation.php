@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace R3H6\OpentelemetryAutoDoctrineDbal;
 
-use Doctrine\DBAL\Driver\Connection;
-use Doctrine\DBAL\Driver\Result;
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Result;
 use OpenTelemetry\API\Instrumentation\CachedInstrumentation;
 use OpenTelemetry\API\Trace\Span;
 use OpenTelemetry\API\Trace\SpanInterface;
@@ -26,78 +26,63 @@ class DoctrineDbalInstrumentation
             'io.opentelemetry.contrib.php.' . self::NAME,
         );
 
-        hook(
-            Connection::class,
+        $tracker = new DoctrineDbalTracker();
+
+        $methods = [
             'prepare',
-            pre: static function (Connection $connection, array $params, string $class, string $function, ?string $filename, ?int $lineno) use ($instrumentation) {
-                $span = self::start($instrumentation, $class, $function, $filename, $lineno);
-                $span->setAttribute(TraceAttributes::DB_QUERY_TEXT, mb_convert_encoding($params[0] ?? 'undefined', 'UTF-8'));
-                Context::storage()->attach($span->storeInContext(Context::getCurrent()));
-            },
-            post: static function (Connection $connection, array $params, mixed $return, ?\Throwable $exception) {
-                self::end($exception);
-            }
-        );
+            'executeQuery',
+            'executeStatement',
+        ];
 
-        hook(
-            Connection::class,
-            'query',
-            pre: static function (Connection $connection, array $params, string $class, string $function, ?string $filename, ?int $lineno) use ($instrumentation) {
-                $span = self::start($instrumentation, $class, $function, $filename, $lineno);
-                $span->setAttribute(TraceAttributes::DB_QUERY_TEXT, mb_convert_encoding($params[0] ?? 'undefined', 'UTF-8'));
-                Context::storage()->attach($span->storeInContext(Context::getCurrent()));
-            },
-            post: static function (Connection $connection, array $params, mixed $return, ?\Throwable $exception) {
-                self::end($exception);
-            }
-        );
+        foreach ($methods as $method) {
+            hook(
+                Connection::class,
+                $method,
+                pre: static function (Connection $connection, array $params, string $class, string $function, ?string $filename, ?int $lineno) use ($instrumentation, $tracker) {
+                    $span = self::start($instrumentation, $class, $function, $filename, $lineno);
+                    $span->setAttribute(TraceAttributes::DB_QUERY_TEXT, mb_convert_encoding($params[0] ?? 'undefined', 'UTF-8'));
+                    $span->setAttributes($tracker->getAttributesByConnection($connection));
+                    Context::storage()->attach($span->storeInContext(Context::getCurrent()));
+                },
+                post: static function (Connection $connection, array $params, mixed $return, ?\Throwable $exception) {
+                    self::end($exception);
+                }
+            );
+        }
 
-        hook(
-            Connection::class,
-            'exec',
-            pre: static function (Connection $connection, array $params, string $class, string $function, ?string $filename, ?int $lineno) use ($instrumentation) {
-                $span = self::start($instrumentation, $class, $function, $filename, $lineno);
-                $span->setAttribute(TraceAttributes::DB_QUERY_TEXT, mb_convert_encoding($params[0] ?? 'undefined', 'UTF-8'));
-                Context::storage()->attach($span->storeInContext(Context::getCurrent()));
-            },
-            post: static function (Connection $connection, array $params, mixed $return, ?\Throwable $exception) {
-                self::end($exception);
-            }
-        );
-
-        hook(
-            Connection::class,
+        $methods = [
             'beginTransaction',
-            pre: static function (Connection $connection, array $params, string $class, string $function, ?string $filename, ?int $lineno) use ($instrumentation) {
-                $span = self::start($instrumentation, $class, $function, $filename, $lineno);
-                Context::storage()->attach($span->storeInContext(Context::getCurrent()));
-            },
-            post: static function (Connection $connection, array $params, mixed $return, ?\Throwable $exception) {
-                self::end($exception);
-            }
-        );
-
-        hook(
-            Connection::class,
             'commit',
-            pre: static function (Connection $connection, array $params, string $class, string $function, ?string $filename, ?int $lineno) use ($instrumentation) {
-                $span = self::start($instrumentation, $class, $function, $filename, $lineno);
-                Context::storage()->attach($span->storeInContext(Context::getCurrent()));
-            },
-            post: static function (Connection $connection, array $params, mixed $return, ?\Throwable $exception) {
-                self::end($exception);
-            }
-        );
+            'rollBack',
+        ];
+
+        foreach ($methods as $method) {
+            hook(
+                Connection::class,
+                $method,
+                pre: static function (Connection $connection, array $params, string $class, string $function, ?string $filename, ?int $lineno) use ($instrumentation, $tracker) {
+                    $span = self::start($instrumentation, $class, $function, $filename, $lineno);
+                    $span->setAttributes($tracker->getAttributesByConnection($connection));
+                    Context::storage()->attach($span->storeInContext(Context::getCurrent()));
+                },
+                post: static function (Connection $connection, array $params, mixed $return, ?\Throwable $exception) {
+                    self::end($exception);
+                }
+            );
+        }
+
+
+
 
         hook(
-            Connection::class,
-            'rollBack',
-            pre: static function (Connection $connection, array $params, string $class, string $function, ?string $filename, ?int $lineno) use ($instrumentation) {
-                $span = self::start($instrumentation, $class, $function, $filename, $lineno);
-                Context::storage()->attach($span->storeInContext(Context::getCurrent()));
-            },
-            post: static function (Connection $connection, array $params, mixed $return, ?\Throwable $exception) {
-                self::end($exception);
+            Result::class,
+            '__construct',
+            pre: static function (Result $result, array $params, string $class, string $function, ?string $filename, ?int $lineno) use ($instrumentation, $tracker) {
+                $connection = $params[1] ?? null;
+                if (!$connection instanceof Connection) {
+                    return;
+                }
+                $tracker->getAttributesByResult($result, $connection); // Only initialize the attributes
             }
         );
 
@@ -117,8 +102,9 @@ class DoctrineDbalInstrumentation
             hook(
                 Result::class,
                 $method,
-                pre: static function (Result $result, array $params, string $class, string $function, ?string $filename, ?int $lineno) use ($instrumentation) {
+                pre: static function (Result $result, array $params, string $class, string $function, ?string $filename, ?int $lineno) use ($instrumentation, $tracker) {
                     $span = self::start($instrumentation, $class, $function, $filename, $lineno);
+                    $span->setAttributes($tracker->getAttributesByResult($result));
                     Context::storage()->attach($span->storeInContext(Context::getCurrent()));
                 },
                 post: static function (Result $result, array $params, mixed $return, ?\Throwable $exception) {

@@ -3,10 +3,10 @@
     "description": "OpenTelemetry auto-instrumentation for Doctrine DBAL.",
     "type": "library",
     "require": {
-        "php": "^8.0",
+        "php": ">=8.1 <8.5",
         "ext-opentelemetry": "*",
         "open-telemetry/api": "^1.0",
-        "doctrine/dbal": "^3.0",
+        "doctrine/dbal": "^3.0 || ^4.0",
         "open-telemetry/sem-conv": "^1.24"
     },
     "license": "Apache-2.0",
@@ -19,15 +19,23 @@
         ]
     },
     "config": {
-        "lock": false
+        "lock": false,
+        "allow-plugins": {
+            "php-http/discovery": true,
+            "tbachert/spi": true
+        }
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.68",
         "phpstan/phpstan": "^2.1",
-        "phpunit/phpunit": "^11.5"
+        "phpunit/phpunit": "^10.5",
+        "open-telemetry/sdk": "^1.2",
+        "nyholm/psr7": "^1.8",
+        "symfony/http-client": "*"
     },
     "scripts": {
         "ci:php:stan": "./vendor/bin/phpstan analyse src",
+        "ci:test:unit": "./vendor/bin/phpunit",
         "fix:php:cs": "./vendor/bin/php-cs-fixer fix src"
     }
 }

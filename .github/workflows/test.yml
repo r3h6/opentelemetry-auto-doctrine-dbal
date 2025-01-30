@@ -1,0 +1,42 @@
+name: Run Tests
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        env:
+          - { DBAL: '3.0' , PHP: '8.1'}
+          - { DBAL: '3.0' , PHP: '8.2'}
+          - { DBAL: '3.0' , PHP: '8.3'}
+          - { DBAL: '3.0' , PHP: '8.4'}
+          - { DBAL: '4.0' , PHP: '8.1'}
+          - { DBAL: '4.0' , PHP: '8.2'}
+          - { DBAL: '4.0' , PHP: '8.3'}
+          - { DBAL: '4.0' , PHP: '8.4'}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.env.PHP }}
+          extensions: zip, pdo_sqlite, opentelemetry
+          coverage: none
+
+      - name: Install dependencies
+        run: composer update --with "doctrine/dbal:^${{matrix.env.DBAL}}"
+
+      - name: Run tests
+        run: vendor/bin/phpunit

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+THIS_SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
+cd "$THIS_SCRIPT_DIR" || exit 1
+
+export PHP=${PHP:-8.2}
+export ROOT_DIR=`readlink -f ${PWD}/../`
+export HOST_UID=`id -u`
+
+ARGS=$@
+docker compose run composer $ARGS
+
+SUITE_EXIT_CODE=$?
+docker compose down --remove-orphans
+exit $SUITE_EXIT_CODE
